@@ -1,44 +1,75 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const session = require('express-session');
-const sqlite3 = require('sqlite3').verbose();
+const pgSession = require('connect-pg-simple')(session);
+const { Pool } = require('pg');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const multer = require('multer');
-const SQLiteStore = require('connect-sqlite3')(session);
+const cloudinary = require('cloudinary').v2;
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Ensure uploads directory exists
-const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Database connection
-const dbDir = process.env.DATA_DIR || __dirname;
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
-const dbPath = path.join(dbDir, 'database.db');
-const db = new sqlite3.Database(dbPath);
-
-// Migration check: Ensure mandal column exists in news table
-db.serialize(() => {
-  db.run("ALTER TABLE news ADD COLUMN mandal TEXT DEFAULT 'Nandyal Town'", (err) => {
-    // Ignore error if column already exists
-  });
+// PostgreSQL Connection Pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
+
+// Configure Cloudinary SDK
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Password Hashing Helper
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+// Multer in-memory storage configuration
+const storage = multer.memoryStorage();
+
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only images and videos are allowed!'), false);
+  }
+};
+
+const upload = multer({ 
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 200 * 1024 * 1024 } // 200MB limit
+});
+
+// Helper to upload memory buffer to Cloudinary
+async function uploadToCloudinary(file) {
+  if (!file) return null;
+  const dataURI = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+  const result = await cloudinary.uploader.upload(dataURI, {
+    resource_type: 'auto',
+    folder: 'nandyal-times'
+  });
+  return result.secure_url;
+}
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(session({
-  store: new SQLiteStore({ db: 'sessions.db', dir: dbDir }),
+  store: new pgSession({
+    pool: pool,
+    tableName: 'session'
+  }),
   secret: 'nandyal-times-community-secret-98765',
   resave: false,
   saveUninitialized: false,
@@ -53,53 +84,13 @@ app.use('/api', (req, res, next) => {
 
 // Serve static assets from public folder
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(uploadsDir));
-
-// Password Hashing Helper
-function hashPassword(password) {
-  return crypto.createHash('sha256').update(password).digest('hex');
-}
-
-// Configure Multer for File Uploads (Images and Videos)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-// Allow only images and videos
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only images and videos are allowed!'), false);
-  }
-};
-
-// Multer instance for Admins/Reporters (200MB limit)
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 200 * 1024 * 1024 } 
-});
-
-// Multer instance for Public Tips (100MB limit to prevent disk fill-up attacks)
-const tipUpload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 100 * 1024 * 1024 }
-});
 
 // Authentication Middlewares
 function requireAuth(req, res, next) {
   if (req.session && req.session.userId) {
     // Check if user is active in DB
-    db.get("SELECT status FROM users WHERE id = ?", [req.session.userId], (err, row) => {
-      if (err || !row || row.status !== 'active') {
+    pool.query("SELECT status FROM users WHERE id = $1", [req.session.userId], (err, result) => {
+      if (err || result.rows.length === 0 || result.rows[0].status !== 'active') {
         req.session.destroy();
         return res.status(401).json({ error: 'Unauthorized: Account is suspended or inactive.' });
       }
@@ -130,29 +121,34 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   const hashedPassword = hashPassword(password);
-  db.get("SELECT id, name, username, role, status FROM users WHERE username = ? AND password = ?", [username, hashedPassword], (err, row) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (!row) {
-      return res.status(400).json({ error: 'Invalid username or password.' });
-    }
-    if (row.status !== 'active') {
-      return res.status(403).json({ error: `Login failed: Your account status is currently '${row.status}'.` });
-    }
+  pool.query(
+    "SELECT id, name, username, role, status FROM users WHERE username = $1 AND password = $2",
+    [username, hashedPassword],
+    (err, result) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      if (result.rows.length === 0) {
+        return res.status(400).json({ error: 'Invalid username or password.' });
+      }
+      const row = result.rows[0];
+      if (row.status !== 'active') {
+        return res.status(403).json({ error: `Login failed: Your account status is currently '${row.status}'.` });
+      }
 
-    // Set session details
-    req.session.userId = row.id;
-    req.session.username = row.username;
-    req.session.role = row.role;
-    req.session.name = row.name;
+      // Set session details
+      req.session.userId = row.id;
+      req.session.username = row.username;
+      req.session.role = row.role;
+      req.session.name = row.name;
 
-    res.json({
-      success: true,
-      message: 'Logged in successfully.',
-      user: { id: row.id, name: row.name, username: row.username, role: row.role }
-    });
-  });
+      res.json({
+        success: true,
+        message: 'Logged in successfully.',
+        user: { id: row.id, name: row.name, username: row.username, role: row.role }
+      });
+    }
+  );
 });
 
 // Get Session Status
@@ -192,12 +188,12 @@ app.post('/api/auth/register-reporter', (req, res) => {
 
   const hashedPassword = hashPassword(password);
 
-  db.run(
-    "INSERT INTO users (name, mobile, location, username, password, role, status) VALUES (?, ?, ?, ?, ?, 'reporter', 'pending')",
+  pool.query(
+    "INSERT INTO users (name, mobile, location, username, password, role, status) VALUES ($1, $2, $3, $4, $5, 'reporter', 'pending')",
     [name, mobile, location, username, hashedPassword],
-    function(err) {
+    (err, result) => {
       if (err) {
-        if (err.message.includes('UNIQUE')) {
+        if (err.code === '23505') { // Postgres Unique Violation
           return res.status(400).json({ error: 'Username already exists. Please choose another one.' });
         }
         return res.status(500).json({ error: 'Failed to submit application.' });
@@ -218,13 +214,13 @@ app.put('/api/auth/change-password', requireAuth, (req, res) => {
   }
 
   const hashedCurrent = hashPassword(currentPassword);
-  db.get("SELECT id FROM users WHERE id = ? AND password = ?", [req.session.userId, hashedCurrent], (err, row) => {
-    if (err || !row) {
+  pool.query("SELECT id FROM users WHERE id = $1 AND password = $2", [req.session.userId, hashedCurrent], (err, result) => {
+    if (err || result.rows.length === 0) {
       return res.status(400).json({ error: 'Incorrect current password.' });
     }
 
     const hashedNew = hashPassword(newPassword);
-    db.run("UPDATE users SET password = ? WHERE id = ?", [hashedNew, req.session.userId], function(err) {
+    pool.query("UPDATE users SET password = $1 WHERE id = $2", [hashedNew, req.session.userId], (err, updateResult) => {
       if (err) {
         return res.status(500).json({ error: 'Failed to update password.' });
       }
@@ -242,47 +238,50 @@ app.get('/api/news', (req, res) => {
   const { category, search, mandal } = req.query;
   let query = `
     SELECT n.*, u.name as reporter_name, u.location as reporter_location,
-           (SELECT COUNT(*) FROM comments WHERE news_id = n.id) as comment_count
+           (SELECT COUNT(*)::int FROM comments WHERE news_id = n.id) as comment_count
     FROM news n 
     LEFT JOIN users u ON n.reporter_id = u.id 
     WHERE n.status = 'published'
   `;
   const params = [];
+  let pIndex = 1;
 
   // Limit feed to the last 30 days unless searching history
   if (!search) {
-    query += ` AND n.created_at >= datetime('now', '-30 days')`;
+    query += ` AND n.created_at >= NOW() - INTERVAL '30 days'`;
   }
 
   if (category && category !== 'All') {
-    query += ` AND n.category = ?`;
+    query += ` AND n.category = $${pIndex++}`;
     params.push(category);
   }
 
   if (mandal && mandal !== 'All') {
-    query += ` AND n.mandal = ?`;
+    query += ` AND n.mandal = $${pIndex++}`;
     params.push(mandal);
   }
 
   if (search) {
-    query += ` AND (n.title LIKE ? OR n.content LIKE ?)`;
-    params.push(`%${search}%`, `%${search}%`);
+    query += ` AND (n.title ILIKE $${pIndex} OR n.content ILIKE $${pIndex})`;
+    pIndex++;
+    params.push(`%${search}%`);
   }
 
   query += ` ORDER BY n.created_at DESC`;
 
-  db.all(query, params, (err, rows) => {
+  pool.query(query, params, (err, result) => {
     if (err) {
+      console.error(err);
       return res.status(500).json({ error: 'Database error fetching news.' });
     }
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
 // Increment Views of an article
 app.post('/api/news/view/:id', (req, res) => {
   const { id } = req.params;
-  db.run("UPDATE news SET views = views + 1 WHERE id = ?", [id], function(err) {
+  pool.query("UPDATE news SET views = views + 1 WHERE id = $1", [id], (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Error logging view.' });
     }
@@ -291,26 +290,23 @@ app.post('/api/news/view/:id', (req, res) => {
 });
 
 // Add News Post (Admin / Reporter)
-app.post('/api/news', requireAuth, upload.single('media'), (req, res) => {
+app.post('/api/news', requireAuth, upload.single('media'), async (req, res) => {
   const { title, content, category, mandal } = req.body;
   if (!title || !content || !category) {
     return res.status(400).json({ error: 'Title, content, and category are required.' });
   }
 
-  let mediaPath = null;
-  let mediaType = 'none';
+  let mediaPath = req.body.existing_media_path || null;
+  let mediaType = req.body.existing_media_type || 'none';
 
   if (req.file) {
-    mediaPath = `/uploads/${req.file.filename}`;
-    const mimetype = req.file.mimetype;
-    if (mimetype.startsWith('image/')) {
-      mediaType = 'image';
-    } else if (mimetype.startsWith('video/')) {
-      mediaType = 'video';
+    try {
+      mediaPath = await uploadToCloudinary(req.file);
+      mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+    } catch (uploadError) {
+      console.error(uploadError);
+      return res.status(500).json({ error: 'Failed to upload media to Cloudinary.' });
     }
-  } else if (req.body.existing_media_path) {
-    mediaPath = req.body.existing_media_path;
-    mediaType = req.body.existing_media_type || 'image';
   }
 
   const targetMandal = mandal || 'Nandyal Town';
@@ -318,15 +314,16 @@ app.post('/api/news', requireAuth, upload.single('media'), (req, res) => {
   // Admin posts go live instantly. Reporter posts require approval.
   const status = (req.session.role === 'admin') ? 'published' : 'pending';
 
-  const query = "INSERT INTO news (title, content, media_path, media_type, category, reporter_id, status, mandal) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-  db.run(query, [title, content, mediaPath, mediaType, category, req.session.userId, status, targetMandal], function(err) {
+  const query = "INSERT INTO news (title, content, media_path, media_type, category, reporter_id, status, mandal) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id";
+  pool.query(query, [title, content, mediaPath, mediaType, category, req.session.userId, status, targetMandal], (err, result) => {
     if (err) {
+      console.error(err);
       return res.status(500).json({ error: 'Failed to create news post.' });
     }
     res.status(201).json({
       success: true,
       message: (status === 'published') ? 'News published successfully!' : 'News submitted successfully for Admin approval.',
-      postId: this.lastID,
+      postId: result.rows[0].id,
       status: status
     });
   });
@@ -336,24 +333,24 @@ app.post('/api/news', requireAuth, upload.single('media'), (req, res) => {
 app.get('/api/admin/news', requireAuth, (req, res) => {
   let query = `
     SELECT n.*, u.name as reporter_name,
-           (SELECT COUNT(*) FROM comments WHERE news_id = n.id) as comment_count
+           (SELECT COUNT(*)::int FROM comments WHERE news_id = n.id) as comment_count
     FROM news n 
     LEFT JOIN users u ON n.reporter_id = u.id
   `;
   const params = [];
 
   if (req.session.role === 'reporter') {
-    query += ` WHERE n.reporter_id = ?`;
+    query += ` WHERE n.reporter_id = $1`;
     params.push(req.session.userId);
   }
 
   query += ` ORDER BY n.created_at DESC`;
 
-  db.all(query, params, (err, rows) => {
+  pool.query(query, params, (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Database error fetching dashboard news.' });
     }
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
@@ -366,7 +363,7 @@ app.put('/api/admin/news/publish/:id', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Invalid status.' });
   }
 
-  db.run("UPDATE news SET status = ? WHERE id = ?", [status, id], function(err) {
+  pool.query("UPDATE news SET status = $1 WHERE id = $2", [status, id], (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Database update failed.' });
     }
@@ -380,19 +377,23 @@ app.delete('/api/news/:id', requireAuth, (req, res) => {
 
   if (req.session.role === 'admin') {
     // Admin can delete anything
-    db.run("DELETE FROM news WHERE id = ?", [id], function(err) {
+    pool.query("DELETE FROM news WHERE id = $1", [id], (err, result) => {
       if (err) return res.status(500).json({ error: 'Failed to delete post.' });
       res.json({ success: true, message: 'News article deleted.' });
     });
   } else {
     // Reporter can only delete their own PENDING articles
-    db.run("DELETE FROM news WHERE id = ? AND reporter_id = ? AND status = 'pending'", [id, req.session.userId], function(err) {
-      if (err) return res.status(500).json({ error: 'Failed to delete post.' });
-      if (this.changes === 0) {
-        return res.status(403).json({ error: 'Cannot delete: Article either published or belongs to someone else.' });
+    pool.query(
+      "DELETE FROM news WHERE id = $1 AND reporter_id = $2 AND status = 'pending'",
+      [id, req.session.userId],
+      (err, result) => {
+        if (err) return res.status(500).json({ error: 'Failed to delete post.' });
+        if (result.rowCount === 0) {
+          return res.status(403).json({ error: 'Cannot delete: Article either published or belongs to someone else.' });
+        }
+        res.json({ success: true, message: 'Draft deleted.' });
       }
-      res.json({ success: true, message: 'Draft deleted.' });
-    });
+    );
   }
 });
 
@@ -402,26 +403,26 @@ app.delete('/api/news/:id', requireAuth, (req, res) => {
 
 // Get Active Advertisements (Public)
 app.get('/api/ads', (req, res) => {
-  db.all("SELECT id, advertiser_name, image_path, link_url, position FROM ads WHERE status = 'active'", [], (err, rows) => {
+  pool.query("SELECT id, advertiser_name, image_path, link_url, position, status FROM ads WHERE status = 'active'", [], (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Error loading ads.' });
     }
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
 // Get All Ads (Admin Only)
 app.get('/api/admin/ads', requireAdmin, (req, res) => {
-  db.all("SELECT * FROM ads ORDER BY created_at DESC", [], (err, rows) => {
+  pool.query("SELECT * FROM ads ORDER BY created_at DESC", [], (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Error loading ads for dashboard.' });
     }
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
 // Add Advertisement (Admin Only)
-app.post('/api/admin/ads', requireAdmin, upload.single('media'), (req, res) => {
+app.post('/api/admin/ads', requireAdmin, upload.single('media'), async (req, res) => {
   const { advertiser_name, link_url, position } = req.body;
   if (!advertiser_name || !link_url || !position) {
     return res.status(400).json({ error: 'Advertiser name, target URL, and position slot are required.' });
@@ -431,16 +432,19 @@ app.post('/api/admin/ads', requireAdmin, upload.single('media'), (req, res) => {
     return res.status(400).json({ error: 'Ad banner image is required.' });
   }
 
-  const imagePath = `/uploads/${req.file.filename}`;
-
-  db.run(
-    "INSERT INTO ads (advertiser_name, image_path, link_url, position, status) VALUES (?, ?, ?, ?, 'active')",
-    [advertiser_name, imagePath, link_url, position],
-    function(err) {
-      if (err) return res.status(500).json({ error: 'Failed to save advertisement.' });
-      res.status(201).json({ success: true, message: 'Ad created and activated successfully.' });
-    }
-  );
+  try {
+    const imagePath = await uploadToCloudinary(req.file);
+    pool.query(
+      "INSERT INTO ads (advertiser_name, image_path, link_url, position, status) VALUES ($1, $2, $3, $4, 'active')",
+      [advertiser_name, imagePath, link_url, position],
+      (err, result) => {
+        if (err) return res.status(500).json({ error: 'Failed to save advertisement.' });
+        res.status(201).json({ success: true, message: 'Ad created and activated successfully.' });
+      }
+    );
+  } catch (err) {
+    res.status(500).json({ error: 'Cloudinary upload error' });
+  }
 });
 
 // Toggle Ad Status (Admin Only)
@@ -452,7 +456,7 @@ app.put('/api/admin/ads/status/:id', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Invalid status.' });
   }
 
-  db.run("UPDATE ads SET status = ? WHERE id = ?", [status, id], function(err) {
+  pool.query("UPDATE ads SET status = $1 WHERE id = $2", [status, id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to update ad status.' });
     res.json({ success: true, message: `Ad status updated to ${status}.` });
   });
@@ -461,7 +465,7 @@ app.put('/api/admin/ads/status/:id', requireAdmin, (req, res) => {
 // Delete Ad (Admin Only)
 app.delete('/api/admin/ads/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
-  db.run("DELETE FROM ads WHERE id = ?", [id], function(err) {
+  pool.query("DELETE FROM ads WHERE id = $1", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to delete advertisement.' });
     res.json({ success: true, message: 'Advertisement deleted.' });
   });
@@ -470,7 +474,7 @@ app.delete('/api/admin/ads/:id', requireAdmin, (req, res) => {
 // Log click on Ad
 app.post('/api/ads/click/:id', (req, res) => {
   const { id } = req.params;
-  db.run("UPDATE ads SET clicks = clicks + 1 WHERE id = ?", [id], function(err) {
+  pool.query("UPDATE ads SET clicks = clicks + 1 WHERE id = $1", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Error logging click.' });
     res.json({ success: true });
   });
@@ -482,21 +486,21 @@ app.post('/api/ads/click/:id', (req, res) => {
 
 // Get Active Ticker Items (Public)
 app.get('/api/ticker', (req, res) => {
-  db.all("SELECT id, text FROM ticker WHERE active = 1 ORDER BY created_at DESC", [], (err, rows) => {
+  pool.query("SELECT id, text FROM ticker WHERE active = 1 ORDER BY created_at DESC", [], (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Error loading ticker entries.' });
     }
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
 // Get All Ticker Items (Admin Only)
 app.get('/api/admin/ticker', requireAdmin, (req, res) => {
-  db.all("SELECT * FROM ticker ORDER BY created_at DESC", [], (err, rows) => {
+  pool.query("SELECT * FROM ticker ORDER BY created_at DESC", [], (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Error loading database ticker list.' });
     }
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
@@ -507,7 +511,7 @@ app.post('/api/admin/ticker', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Ticker text announcement is required.' });
   }
 
-  db.run("INSERT INTO ticker (text, active) VALUES (?, 1)", [text.trim()], function(err) {
+  pool.query("INSERT INTO ticker (text, active) VALUES ($1, 1)", [text.trim()], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to save ticker announcement.' });
     res.status(201).json({ success: true, message: 'Ticker announcement added successfully.' });
   });
@@ -522,7 +526,7 @@ app.put('/api/admin/ticker/status/:id', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Invalid active status. Must be 1 or 0.' });
   }
 
-  db.run("UPDATE ticker SET active = ? WHERE id = ?", [active, id], function(err) {
+  pool.query("UPDATE ticker SET active = $1 WHERE id = $2", [active, id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to update ticker status.' });
     res.json({ success: true, message: 'Ticker announcement status updated.' });
   });
@@ -531,7 +535,7 @@ app.put('/api/admin/ticker/status/:id', requireAdmin, (req, res) => {
 // Delete Ticker Item (Admin Only)
 app.delete('/api/admin/ticker/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
-  db.run("DELETE FROM ticker WHERE id = ?", [id], function(err) {
+  pool.query("DELETE FROM ticker WHERE id = $1", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to delete ticker announcement.' });
     res.json({ success: true, message: 'Ticker announcement deleted.' });
   });
@@ -543,9 +547,9 @@ app.delete('/api/admin/ticker/:id', requireAdmin, (req, res) => {
 
 // Get All Reporters
 app.get('/api/admin/reporters', requireAdmin, (req, res) => {
-  db.all("SELECT id, name, mobile, location, username, role, status, created_at FROM users WHERE role = 'reporter' ORDER BY created_at DESC", [], (err, rows) => {
+  pool.query("SELECT id, name, mobile, location, username, role, status, created_at FROM users WHERE role = 'reporter' ORDER BY created_at DESC", [], (err, result) => {
     if (err) return res.status(500).json({ error: 'Database error fetching reporters.' });
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
@@ -558,7 +562,7 @@ app.put('/api/admin/reporters/:id', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Invalid account status.' });
   }
 
-  db.run("UPDATE users SET status = ? WHERE id = ?", [status, id], function(err) {
+  pool.query("UPDATE users SET status = $1 WHERE id = $2", [status, id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to update reporter status.' });
     res.json({ success: true, message: `Reporter status updated to ${status}.` });
   });
@@ -567,7 +571,7 @@ app.put('/api/admin/reporters/:id', requireAdmin, (req, res) => {
 // Delete Reporter Account
 app.delete('/api/admin/reporters/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
-  db.run("DELETE FROM users WHERE id = ? AND role = 'reporter'", [id], function(err) {
+  pool.query("DELETE FROM users WHERE id = $1 AND role = 'reporter'", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to delete account.' });
     res.json({ success: true, message: 'Reporter account deleted.' });
   });
@@ -579,14 +583,14 @@ app.delete('/api/admin/reporters/:id', requireAdmin, (req, res) => {
 
 // Get Directory Listings
 app.get('/api/directory', (req, res) => {
-  db.all("SELECT * FROM directory ORDER BY is_featured DESC, business_name ASC", [], (err, rows) => {
+  pool.query("SELECT * FROM directory ORDER BY is_featured DESC, business_name ASC", [], (err, result) => {
     if (err) return res.status(500).json({ error: 'Database error.' });
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
 // Add Directory Entry (Admin Only)
-app.post('/api/admin/directory', requireAdmin, upload.single('media'), (req, res) => {
+app.post('/api/admin/directory', requireAdmin, upload.single('media'), async (req, res) => {
   const { business_name, description, category, phone, whatsapp, address, is_featured } = req.body;
   if (!business_name || !category) {
     return res.status(400).json({ error: 'Business name and category are required.' });
@@ -594,15 +598,19 @@ app.post('/api/admin/directory', requireAdmin, upload.single('media'), (req, res
 
   let imagePath = null;
   if (req.file) {
-    imagePath = `/uploads/${req.file.filename}`;
+    try {
+      imagePath = await uploadToCloudinary(req.file);
+    } catch (err) {
+      return res.status(500).json({ error: 'Cloudinary upload error' });
+    }
   }
 
   const featured = is_featured === 'true' || is_featured === '1' ? 1 : 0;
 
-  db.run(
-    "INSERT INTO directory (business_name, description, category, phone, whatsapp, address, image_path, is_featured) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  pool.query(
+    "INSERT INTO directory (business_name, description, category, phone, whatsapp, address, image_path, is_featured) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
     [business_name, description, category, phone, whatsapp, address, imagePath, featured],
-    function(err) {
+    (err, result) => {
       if (err) return res.status(500).json({ error: 'Failed to add directory entry.' });
       res.status(201).json({ success: true, message: 'Directory entry added successfully.' });
     }
@@ -612,7 +620,7 @@ app.post('/api/admin/directory', requireAdmin, upload.single('media'), (req, res
 // Delete Directory Entry (Admin Only)
 app.delete('/api/admin/directory/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
-  db.run("DELETE FROM directory WHERE id = ?", [id], function(err) {
+  pool.query("DELETE FROM directory WHERE id = $1", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to delete directory entry.' });
     res.json({ success: true, message: 'Listing deleted.' });
   });
@@ -623,7 +631,7 @@ app.delete('/api/admin/directory/:id', requireAdmin, (req, res) => {
 // ==========================================
 
 // User submits incident tip (Public)
-app.post('/api/tips', tipUpload.single('media'), (req, res) => {
+app.post('/api/tips', upload.single('media'), async (req, res) => {
   const { name, contact, title, description } = req.body;
   if (!name || !contact || !title || !description) {
     return res.status(400).json({ error: 'Name, contact, title, and description are required.' });
@@ -633,19 +641,18 @@ app.post('/api/tips', tipUpload.single('media'), (req, res) => {
   let mediaType = 'none';
 
   if (req.file) {
-    mediaPath = `/uploads/${req.file.filename}`;
-    const mimetype = req.file.mimetype;
-    if (mimetype.startsWith('image/')) {
-      mediaType = 'image';
-    } else if (mimetype.startsWith('video/')) {
-      mediaType = 'video';
+    try {
+      mediaPath = await uploadToCloudinary(req.file);
+      mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to upload media.' });
     }
   }
 
-  db.run(
-    "INSERT INTO tips (name, contact, title, description, media_path, media_type, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')",
+  pool.query(
+    "INSERT INTO tips (name, contact, title, description, media_path, media_type, status) VALUES ($1, $2, $3, $4, $5, $6, 'pending')",
     [name, contact, title, description, mediaPath, mediaType],
-    function(err) {
+    (err, result) => {
       if (err) return res.status(500).json({ error: 'Failed to record tip.' });
       res.status(201).json({ success: true, message: 'Thank you! Your news tip has been successfully submitted to Nandyal Times admins.' });
     }
@@ -654,16 +661,16 @@ app.post('/api/tips', tipUpload.single('media'), (req, res) => {
 
 // Admin get tips
 app.get('/api/admin/tips', requireAdmin, (req, res) => {
-  db.all("SELECT * FROM tips ORDER BY created_at DESC", [], (err, rows) => {
+  pool.query("SELECT * FROM tips ORDER BY created_at DESC", [], (err, result) => {
     if (err) return res.status(500).json({ error: 'Database error fetching tips.' });
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
 // Admin update tip status (reviewed)
 app.put('/api/admin/tips/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
-  db.run("UPDATE tips SET status = 'reviewed' WHERE id = ?", [id], function(err) {
+  pool.query("UPDATE tips SET status = 'reviewed' WHERE id = $1", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Database update failed.' });
     res.json({ success: true, message: 'Tip marked as reviewed.' });
   });
@@ -672,9 +679,9 @@ app.put('/api/admin/tips/:id', requireAdmin, (req, res) => {
 // Admin delete tip (Admin Only)
 app.delete('/api/admin/tips/:id', requireAdmin, (req, res) => {
   const { id } = req.params;
-  db.run("DELETE FROM tips WHERE id = ?", [id], function(err) {
+  pool.query("DELETE FROM tips WHERE id = $1", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to delete report.' });
-    if (this.changes === 0) return res.status(404).json({ error: 'Report not found.' });
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Report not found.' });
     res.json({ success: true, message: 'Report deleted successfully.' });
   });
 });
@@ -685,18 +692,18 @@ app.delete('/api/admin/tips/:id', requireAdmin, (req, res) => {
 
 // Get Reviewed Community Notices (Public)
 app.get('/api/public-notices', (req, res) => {
-  db.all("SELECT id, title, description, media_path, media_type, created_at FROM tips WHERE status = 'reviewed' ORDER BY created_at DESC", [], (err, rows) => {
+  pool.query("SELECT id, title, description, media_path, media_type, created_at FROM tips WHERE status = 'reviewed' ORDER BY created_at DESC", [], (err, result) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to fetch community notices.' });
     }
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
 // Add like to article
 app.post('/api/news/like/:id', (req, res) => {
   const { id } = req.params;
-  db.run("UPDATE news SET likes = likes + 1 WHERE id = ?", [id], function(err) {
+  pool.query("UPDATE news SET likes = likes + 1 WHERE id = $1", [id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to record like.' });
     res.json({ success: true });
   });
@@ -705,9 +712,9 @@ app.post('/api/news/like/:id', (req, res) => {
 // Get comments for an article
 app.get('/api/news/comments/:news_id', (req, res) => {
   const { news_id } = req.params;
-  db.all("SELECT * FROM comments WHERE news_id = ? ORDER BY created_at DESC", [news_id], (err, rows) => {
+  pool.query("SELECT * FROM comments WHERE news_id = $1 ORDER BY created_at DESC", [news_id], (err, result) => {
     if (err) return res.status(500).json({ error: 'Database error fetching comments.' });
-    res.json(rows);
+    res.json(result.rows);
   });
 });
 
@@ -718,9 +725,9 @@ app.post('/api/news/comments/:news_id', (req, res) => {
   if (!author || !content) {
     return res.status(400).json({ error: 'Author and comment text are required.' });
   }
-  db.run("INSERT INTO comments (news_id, author, content) VALUES (?, ?, ?)", [news_id, author, content], function(err) {
+  pool.query("INSERT INTO comments (news_id, author, content) VALUES ($1, $2, $3) RETURNING id", [news_id, author, content], (err, result) => {
     if (err) return res.status(500).json({ error: 'Failed to save comment.' });
-    res.status(201).json({ success: true, commentId: this.lastID });
+    res.status(201).json({ success: true, commentId: result.rows[0].id });
   });
 });
 
@@ -728,7 +735,7 @@ app.post('/api/news/comments/:news_id', (req, res) => {
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File is too large. Max allowed size is 200MB for news posts and 100MB for community tips.' });
+      return res.status(400).json({ error: 'File is too large. Max allowed size is 200MB.' });
     }
     return res.status(400).json({ error: `Upload error: ${err.message}` });
   } else if (err) {
