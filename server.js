@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 5000;
 
 // PostgreSQL Connection Pool
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.NEON_DATABASE_URL,
   ssl: {
     rejectUnauthorized: false
   }
