@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Nandyal Times Portal</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Admin Dashboard Specific Styles overriding default styles where necessary */
+    body {
+      background-color: var(--bg-deep);
+    }
+    
+    .login-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    
+    .login-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 420px;
+      padding: 36px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    
+    .login-card h2 {
+      font-size: 24px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    
+    .login-card p {
+      color: var(--text-secondary);
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    
+    /* Dashboard Main Shell */
+    .dashboard-shell {
+      display: none; /* Shown dynamically when logged in */
+      min-height: 100vh;
+    }
+    
+    .dashboard-header {
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--glass-border);
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    .dashboard-user-info {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 14px;
+    }
+    
+    .dashboard-container {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: calc(100vh - 64px);
+    }
+    
+    /* Sidebar Navigation */
+    .dashboard-sidebar {
+      background: #18181b;
+      border-right: 1px solid var(--card-border);
+      padding: 24px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      transition: var(--transition-fast);
+      cursor: pointer;
+    }
+    
+    .sidebar-link:hover, .sidebar-link.active {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    
+    .sidebar-link.active {
+      border-left: 3px solid var(--crimson);
+      background: rgba(225, 29, 72, 0.08);
+      color: var(--crimson);
+      padding-left: 13px;
+    }
+    
+    /* Content Area */
+    .dashboard-content {
+      padding: 32px;
+      overflow-y: auto;
+    }
+    
+    .tab-section {
+      display: none; /* Switched dynamically */
+    }
+    
+    .tab-section.active {
+      display: block;
+      animation: fadeIn 0.2s ease-out;
+    }
+    
+    /* Analytics Cards Grid */
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+    
+    .analytics-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      text-align: center;
+    }
+    
+    .analytics-card h4 {
+      font-size: 13px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    
+    .analytics-card .number {
+      font-size: 36px;
+      font-weight: 800;
+      color: #ffffff;
+      font-family: var(--font-heading);
+    }
+    
+    /* Manager Forms / Tables Grid */
+    .manager-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+    
+    @media (max-width: 1024px) {
+      .manager-grid {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+      .dashboard-container {
+        grid-template-columns: 1fr;
+        min-height: calc(100vh - 64px);
+      }
+      .dashboard-sidebar {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 16px;
+        overflow-x: auto;
+        height: auto;
+        min-height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--card-border);
+        background: #18181b;
+        position: sticky;
+        top: 64px;
+        z-index: 90;
+      }
+      .sidebar-nav {
+        display: flex;
+        flex-direction: row;
+        gap: 8px;
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .sidebar-nav::-webkit-scrollbar {
+        height: 4px;
+      }
+      .sidebar-nav::-webkit-scrollbar-thumb {
+        background: var(--crimson);
+        border-radius: 2px;
+      }
+      .sidebar-link {
+        padding: 8px 12px;
+        font-size: 13px;
+        white-space: nowrap;
+        border-radius: var(--radius-md);
+      }
+      .sidebar-link.active {
+        border-left: none;
+        border-bottom: 3px solid var(--crimson);
+        background: rgba(225, 29, 72, 0.08);
+        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        padding-left: 12px;
+      }
+      .dashboard-sidebar > div:last-child {
+        display: none;
+      }
+      .dashboard-content {
+        padding: 16px;
+      }
+    }
+    
+    .manager-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+    }
+    
+    .manager-card h3 {
+      font-size: 18px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+    }
+    
+    /* Custom Responsive Tables */
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      overflow-x: auto;
+    }
+    
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      text-align: left;
+    }
+    
+    .data-table th, .data-table td {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    
+    .data-table th {
+      background: rgba(255,255,255,0.02);
+      font-weight: 600;
+      color: #ffffff;
+      font-family: var(--font-heading);
+    }
+    
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .data-table tr:hover td {
+      background: rgba(255,255,255,0.01);
+    }
+    
+    .td-actions {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .btn-action {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-secondary);
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: var(--transition-fast);
+    }
+    .btn-action:hover {
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+    .btn-action-publish { background: var(--crimson-glow); border-color: var(--crimson); color: #ffffff; }
+    .btn-action-publish:hover { background: var(--crimson); }
+    .btn-action-delete { color: #f43f5e; }
+    .btn-action-delete:hover { background: rgba(244, 63, 94, 0.1); border-color: #f43f5e; }
+    
+    .media-preview-cell img, .media-preview-cell video {
+      width: 50px;
+      height: 35px;
+      object-fit: cover;
+      border-radius: 4px;
+      display: block;
+    }
+    
+    .no-data-msg {
+      padding: 30px;
+      text-align: center;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN CARD VIEW -->
+  <div class="login-container" id="loginView">
+    <div class="login-card">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <span class="logo" style="justify-content: center; font-size: 32px;">
+          <span class="logo-red">Nandyal</span><span class="logo-gold">Times</span>
+        </span>
+        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); font-weight: 700;">Dashboard Panel</span>
+      </div>
+      <h2>Welcome Back</h2>
+      <p>Sign in to post local news updates or manage directory elements.</p>
+      
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="loginUsername">Username</label>
+          <input type="text" id="loginUsername" required placeholder="Enter username">
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" required placeholder="Enter password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Log In</button>
+      </form>
+      <div style="text-align: center; margin-top: 20px;">
+        <a href="index.html" style="font-size: 13px; color: var(--text-secondary); hover:color:var(--crimson);"><i class="fa-solid fa-house"></i> Return to Homepage</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD SHELL (HIDDEN BY DEFAULT) -->
+  <div class="dashboard-shell" id="dashboardView">
+    
+    <!-- Top Bar -->
+    <header class="dashboard-header">
+      <a href="index.html" class="logo">
+        <span class="logo-red">Nandyal</span><span class="logo-gold">Times</span>
+      </a>
+      <div class="dashboard-user-info">
+        <span id="welcomeMessage">Welcome, User</span>
+        <button class="btn btn-outline" style="padding: 6px 12px; font-size: 12px;" onclick="handleLogout()">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Container Grid -->
+    <div class="dashboard-container">
+      
+      <!-- Sidebar Navigation -->
+      <aside class="dashboard-sidebar">
+        <div class="sidebar-nav">
+          <div class="sidebar-link active" id="navNews" onclick="switchTab('newsSection', this)">
+            <i class="fa-solid fa-pencil"></i> News Manager
+          </div>
+          <!-- Admin-Only Links -->
+          <div class="sidebar-link" id="navAnalytics" onclick="switchTab('analyticsSection', this)">
+            <i class="fa-solid fa-chart-line"></i> Analytics
+          </div>
+          <div class="sidebar-link" id="navApprovals" onclick="switchTab('approvalsSection', this)">
+            <i class="fa-solid fa-circle-check"></i> News Approvals
+          </div>
+          <div class="sidebar-link" id="navTips" onclick="switchTab('tipsSection', this)">
+            <i class="fa-solid fa-bullhorn"></i> Community Reports
+          </div>
+          <div class="sidebar-link" id="navReporters" onclick="switchTab('reportersSection', this)">
+            <i class="fa-solid fa-users"></i> Reporter Requests
+          </div>
+          <div class="sidebar-link" id="navAds" onclick="switchTab('adsSection', this)">
+            <i class="fa-solid fa-rectangle-ad"></i> Ad Manager
+          </div>
+          <div class="sidebar-link" id="navDirectory" onclick="switchTab('directorySection', this)">
+            <i class="fa-solid fa-folder-open"></i> Directory Manager
+          </div>
+          <div class="sidebar-link" id="navTicker" onclick="switchTab('tickerSection', this)">
+            <i class="fa-solid fa-bolt"></i> Ticker Manager
+          </div>
+          <!-- Common Settings -->
+          <div class="sidebar-link" id="navSettings" onclick="switchTab('settingsSection', this)">
+            <i class="fa-solid fa-gears"></i> Account Settings
+          </div>
+        </div>
+        <div style="font-size: 11px; text-align: center; color: var(--text-muted);">
+          Portal Version 1.0.0
+        </div>
+      </aside>
+
+      <!-- Content Panels -->
+      <main class="dashboard-content">
+
+        <!-- 1. ANALYTICS TAB -->
+        <section class="tab-section" id="analyticsSection">
+          <h2 style="margin-bottom: 24px;">Community Analytics</h2>
+          <div class="analytics-grid">
+            <div class="analytics-card">
+              <h4>Total Published News</h4>
+              <div class="number" id="statNewsCount">0</div>
+            </div>
+            <div class="analytics-card">
+              <h4>Pending Approvals</h4>
+              <div class="number" id="statPendingNewsCount" style="color: var(--crimson);">0</div>
+            </div>
+            <div class="analytics-card">
+              <h4>Active Reporters</h4>
+              <div class="number" id="statReportersCount" style="color: var(--gold);">0</div>
+            </div>
+            <div class="analytics-card">
+              <h4>Ad Placements Clicks</h4>
+              <div class="number" id="statAdClicks" style="color: var(--success);">0</div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- Dedicated Tips Section -->
+        <section class="tab-section" id="tipsSection">
+          <h2 style="margin-bottom: 24px;">Community Reports & Tips</h2>
+          <div class="manager-card">
+            <h3><i class="fa-solid fa-bullhorn text-crimson"></i> User-Submitted Incident Reports</h3>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Media</th>
+                    <th>Submitter</th>
+                    <th>Contact</th>
+                    <th>Incident Title</th>
+                    <th>Description</th>
+                    <th>Submitted At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="tipsTableBody">
+                  <!-- Loaded Dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. NEWS MANAGER TAB (COMMON) -->
+        <section class="tab-section active" id="newsSection">
+          <h2 style="margin-bottom: 24px;">Post & Manage News</h2>
+          <div class="manager-grid">
+            <!-- Writer Form -->
+            <div class="manager-card">
+              <h3>Create News Post</h3>
+              <form id="newsForm" enctype="multipart/form-data">
+                <div class="form-group">
+                  <label for="newsTitle">News Headline *</label>
+                  <input type="text" id="newsTitle" name="title" required placeholder="Enter eye-catching title">
+                </div>
+                <div class="form-group">
+                  <label for="newsCategory">Category *</label>
+                  <select id="newsCategory" name="category" required>
+                    <option value="Local">Local Incidents</option>
+                    <option value="Jobs">Local Jobs</option>
+                    <option value="Education">Education Alerts</option>
+                    <option value="Sports">Sports Events</option>
+                    <option value="Events">Festivals & Events</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="newsMandal">Mandal Area *</label>
+                  <select id="newsMandal" name="mandal" required>
+                    <option value="Nandyal Town">Nandyal Town</option>
+                    <option value="Mahanandi">Mahanandi</option>
+                    <option value="Allagadda">Allagadda</option>
+                    <option value="Banaganapalli">Banaganapalli</option>
+                    <option value="Koilkuntla">Koilkuntla</option>
+                    <option value="Atmakur">Atmakur</option>
+                    <option value="Nandikotkur">Nandikotkur</option>
+                    <option value="Bethamcherla">Bethamcherla</option>
+                    <option value="Dhone">Dhone</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="newsContent">News content *</label>
+                  <textarea id="newsContent" name="content" rows="8" required placeholder="Write the full report description details here..."></textarea>
+                </div>
+                <div class="form-group">
+                  <label for="newsMedia">Attach Photo or Video (Optional)</label>
+                  <input type="file" id="newsMedia" name="media" accept="image/*,video/*">
+                  <p class="file-help">Upload visual formats (PNG, JPG, MP4). Max 200MB.</p>
+                  <div id="newsMediaPreviewContainer" style="display:none; margin-top:10px;">
+                    <span style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Draft Media Attached:</span>
+                    <div id="newsMediaPreview" style="max-width:150px; border-radius:var(--radius-sm); overflow:hidden; border:1px solid var(--card-border);"></div>
+                    <button type="button" class="btn btn-outline" style="padding:4px 8px; font-size:11px; margin-top:6px; height:auto; width:auto;" onclick="clearDraftMedia()">Remove Media</button>
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Publish News</button>
+              </form>
+            </div>
+
+            <!-- List table -->
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Media</th>
+                    <th>Headline</th>
+                    <th>Category</th>
+                    <th>Reporter</th>
+                    <th>Status</th>
+                    <th>Views</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="newsTableBody">
+                  <!-- Dynamic rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. NEWS APPROVALS TAB (ADMIN ONLY) -->
+        <section class="tab-section" id="approvalsSection">
+          <h2 style="margin-bottom: 24px;">News Approval Workflows</h2>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Media</th>
+                  <th>Headline</th>
+                  <th>Category</th>
+                  <th>Reporter</th>
+                  <th>Submitted At</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="approvalsTableBody">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 4. REPORTER REQUESTS TAB (ADMIN ONLY) -->
+        <section class="tab-section" id="reportersSection">
+          <h2 style="margin-bottom: 24px;">Reporter Verification</h2>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Mobile</th>
+                  <th>Location Area</th>
+                  <th>Username</th>
+                  <th>Status</th>
+                  <th>Applied On</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="reportersTableBody">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 5. AD MANAGER TAB (ADMIN ONLY) -->
+        <section class="tab-section" id="adsSection">
+          <h2 style="margin-bottom: 24px;">Banners & Advertisements</h2>
+          <div class="manager-grid">
+            <!-- Ad Uploader -->
+            <div class="manager-card">
+              <h3>Upload Advertisement</h3>
+              <form id="adForm" enctype="multipart/form-data">
+                <div class="form-group">
+                  <label for="adName">Advertiser Name *</label>
+                  <input type="text" id="adName" name="advertiser_name" required placeholder="e.g. Sri Sai Jewellers">
+                </div>
+                <div class="form-group">
+                  <label for="adLink">Target Link URL *</label>
+                  <input type="url" id="adLink" name="link_url" required placeholder="WhatsApp link or Website">
+                </div>
+                <div class="form-group">
+                  <label for="adPosition">Banner Slot Position *</label>
+                  <select id="adPosition" name="position" required>
+                    <option value="top_banner">Top Banner (Home header - 100px H)</option>
+                    <option value="sidebar">Sidebar Slot (Box banner - 250px H)</option>
+                    <option value="in_feed">In-Feed Slot (Wide banner - 120px H)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="adMedia">Upload Banner Banner Image *</label>
+                  <input type="file" id="adMedia" name="media" accept="image/*" required>
+                  <p class="file-help">Prefer optimized PNG or JPEG banners.</p>
+                </div>
+                <button type="submit" class="btn btn-gold btn-block">Publish Advertisement</button>
+              </form>
+            </div>
+
+            <!-- Ad table -->
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Banner</th>
+                    <th>Advertiser</th>
+                    <th>Slot</th>
+                    <th>Clicks</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="adsTableBody">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. DIRECTORY MANAGER (ADMIN ONLY) -->
+        <section class="tab-section" id="directorySection">
+          <h2 style="margin-bottom: 24px;">Local Directory Listings</h2>
+          <div class="manager-grid">
+            <!-- Form -->
+            <div class="manager-card">
+              <h3>Add Business Card</h3>
+              <form id="directoryForm" enctype="multipart/form-data">
+                <div class="form-group">
+                  <label for="dirName">Business Name *</label>
+                  <input type="text" id="dirName" name="business_name" required placeholder="e.g. Spicy Rayalaseema Restaurant">
+                </div>
+                <div class="form-group">
+                  <label for="dirCategory">Category *</label>
+                  <select id="dirCategory" name="category" required>
+                    <option value="Food">Restaurants & Food</option>
+                    <option value="Shopping">Shopping & Retails</option>
+                    <option value="Services">Utilities & Services</option>
+                    <option value="Health">Hospitals & Clinics</option>
+                    <option value="Education">Schools & Colleges</option>
+                    <option value="Other">Other Business</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="dirPhone">Contact phone</label>
+                  <input type="tel" id="dirPhone" name="phone" placeholder="Landline or mobile phone">
+                </div>
+                <div class="form-group">
+                  <label for="dirWa">WhatsApp Contact</label>
+                  <input type="tel" id="dirWa" name="whatsapp" placeholder="WhatsApp format: 9848xxxxxx">
+                </div>
+                <div class="form-group">
+                  <label for="dirAddress">Address Location</label>
+                  <input type="text" id="dirAddress" name="address" placeholder="e.g. Near Srinivasa Center, Nandyal">
+                </div>
+                <div class="form-group">
+                  <label for="dirDescription">Short Description</label>
+                  <textarea id="dirDescription" name="description" rows="3" placeholder="Briefly describe products/services..."></textarea>
+                </div>
+                <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+                  <input type="checkbox" id="dirFeatured" name="is_featured" value="true">
+                  <label for="dirFeatured" style="margin-bottom:0;">Feature on sidebar list</label>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Add Listing</button>
+              </form>
+            </div>
+
+            <!-- List table -->
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Business Name</th>
+                    <th>Category</th>
+                    <th>Contact</th>
+                    <th>Address</th>
+                    <th>Featured</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="directoryTableBody">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. TICKER MANAGER (ADMIN ONLY) -->
+        <section class="tab-section" id="tickerSection">
+          <h2 style="margin-bottom: 24px;">Manage Breaking News Ticker</h2>
+          <div class="manager-grid">
+            <!-- Add Ticker Form -->
+            <div class="manager-card">
+              <h3>Add Ticker Alert</h3>
+              <form id="tickerForm">
+                <div class="form-group">
+                  <label for="tickerText">Announcements / Alert Text *</label>
+                  <textarea id="tickerText" name="text" rows="4" required placeholder="Type the alert message to scroll on homepage header..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Publish Alert</button>
+              </form>
+            </div>
+
+            <!-- Ticker items table -->
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Alert Message</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="tickerTableBody">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. SETTINGS PANEL (COMMON) -->
+        <section class="tab-section" id="settingsSection">
+          <h2 style="margin-bottom: 24px;">Account Settings</h2>
+          <div class="manager-card" style="max-width: 480px;">
+            <h3>Update Password</h3>
+            <form id="settingsForm">
+              <div class="form-group">
+                <label for="currentPassword">Current Password *</label>
+                <input type="password" id="currentPassword" required placeholder="Enter current password">
+              </div>
+              <div class="form-group">
+                <label for="newPassword">New Password *</label>
+                <input type="password" id="newPassword" required placeholder="Enter new password">
+              </div>
+              <div class="form-group">
+                <label for="confirmPassword">Confirm New Password *</label>
+                <input type="password" id="confirmPassword" required placeholder="Re-type new password">
+              </div>
+              <button type="submit" class="btn btn-primary btn-block">Change Password</button>
+            </form>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+  </div>
+
+  <script src="mock-api.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

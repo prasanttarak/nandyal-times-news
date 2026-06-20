@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nandyal Times - Local News & Community Portal</title>
+  <!-- Google Fonts: Outfit (Headings) & Inter (Body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Breaking News Ticker -->
+  <div class="news-ticker-container" id="tickerContainer">
+    <div class="ticker-label">
+      <i class="fa-solid fa-bolt-lightning"></i> BREAKING NEWS
+    </div>
+    <div class="ticker-content">
+      <div class="ticker-track" id="tickerTrack">
+        Loading recent local news and community headlines...
+      </div>
+    </div>
+  </div>
+
+  <!-- Sticky Header & Glass Navbar -->
+  <header class="main-header">
+    <div class="nav-container">
+      <a href="index.html" class="logo">
+        <span class="logo-red">Nandyal</span><span class="logo-gold">Times</span>
+      </a>
+      <nav class="nav-menu" id="navMenu">
+        <a href="#news" class="nav-link active" onclick="setCategory('All', this)"><i class="fa-solid fa-newspaper"></i> News</a>
+        <a href="#news" class="nav-link" onclick="setCategory('Local', this)">Local</a>
+        <a href="#news" class="nav-link" onclick="setCategory('Jobs', this)">Jobs</a>
+        <a href="#news" class="nav-link" onclick="setCategory('Education', this)">Education</a>
+        <a href="#news" class="nav-link" onclick="setCategory('Sports', this)">Sports</a>
+        <a href="#news" class="nav-link" onclick="setCategory('Events', this)">Events</a>
+        <a href="#directory" class="nav-link"><i class="fa-solid fa-store"></i> Directory</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="theme-toggle-btn" id="themeToggleBtn" title="Toggle Light/Dark Theme">
+          <i class="fa-solid fa-moon"></i>
+        </button>
+        <button class="btn btn-primary" onclick="openModal('tipModal')">
+          <i class="fa-solid fa-bullhorn"></i> Submit Tip
+        </button>
+        <button class="btn btn-outline" onclick="openModal('reporterModal')">
+          <i class="fa-solid fa-user-pen"></i> Join as Reporter
+        </button>
+        <a href="admin.html" class="admin-login-link" title="Admin / Reporter Login">
+          <i class="fa-solid fa-circle-user"></i>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Body Layout -->
+  <main class="page-layout container">
+    
+    <!-- Top Advertisement Banner -->
+    <div class="sponsor-card top-sponsor-card" id="topSponsorSlot">
+      <!-- Loaded Dynamically -->
+    </div>
+
+    <div class="grid-layout">
+      
+      <!-- Left Column: News Feed -->
+      <section class="news-section" id="news">
+        
+        <!-- Citizens Notice Board Alert Widget -->
+        <div class="community-notice-board" id="publicNoticeBoard">
+          <div class="notice-board-header">
+            <h3><i class="fa-solid fa-bullhorn text-crimson"></i> Citizens Notice Board</h3>
+            <span class="notice-board-sub">Verified reports from local citizens</span>
+          </div>
+          <div class="notice-board-feed" id="publicNoticeFeed">
+            <!-- Loaded Dynamically -->
+            <p style="font-size:12px; color:var(--text-secondary); text-align:center; padding:12px;">Loading community notices...</p>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <h1 class="section-title" id="feedTitle">Latest Feed</h1>
+          <div class="feed-filters">
+            <div class="mandal-select-wrapper">
+              <select id="mandalSelect" onchange="handleMandalChange()">
+                <option value="All">All Mandals (Nandyal)</option>
+                <option value="Nandyal Town">Nandyal Town</option>
+                <option value="Mahanandi">Mahanandi</option>
+                <option value="Allagadda">Allagadda</option>
+                <option value="Banaganapalli">Banaganapalli</option>
+                <option value="Koilkuntla">Koilkuntla</option>
+                <option value="Atmakur">Atmakur</option>
+                <option value="Nandikotkur">Nandikotkur</option>
+                <option value="Bethamcherla">Bethamcherla</option>
+                <option value="Dhone">Dhone</option>
+              </select>
+            </div>
+            <div class="search-bar">
+              <input type="text" id="searchInput" placeholder="Search updates...">
+              <button onclick="handleSearch()"><i class="fa-solid fa-magnifying-glass"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- News Feed Cards Container -->
+        <div class="news-feed" id="newsFeed">
+          <div class="loading-wave">
+            <div class="wave-item"></div>
+            <div class="wave-item"></div>
+            <div class="wave-item"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Sidebar -->
+      <aside class="sidebar">
+
+        <!-- Weather Widget -->
+        <div class="sidebar-widget weather-widget" id="weatherWidget">
+          <!-- Loaded dynamically in app.js -->
+        </div>
+
+        <!-- WhatsApp Report Widget -->
+        <div class="sidebar-widget whatsapp-widget">
+          <div class="wa-header">
+            <i class="fa-brands fa-whatsapp text-emerald"></i>
+            <div>
+              <h3>Report Local Issues</h3>
+              <p>Direct WhatsApp Line</p>
+            </div>
+          </div>
+          <p class="widget-desc">Facing issues like water shortage, road damage, electricity cuts, or civic problems in your area? Contact our news desk directly on WhatsApp. <br><br><strong>మీ ప్రాంతంలో రోడ్లు, నీటి సమస్య, విద్యుత్ కోతలు లేదా ప్రజా సమస్యలు ఉంటే ఫోటో/వీడియో మరియు వివరాలను నేరుగా మా వాట్సాప్ కు పంపండి.</strong></p>
+          <!-- REPLACE 919000000000 WITH CLIENT'S WHATSAPP NUMBER -->
+          <a href="https://wa.me/917816094431?text=Hi%20Nandyal%20Times,%20I%20want%20to%20report%20an%20issue%20in%20my%20area." target="_blank" class="btn btn-whatsapp-widget btn-block">
+            <i class="fa-brands fa-whatsapp"></i> Chat on WhatsApp / సంప్రదించండి
+          </a>
+        </div>
+        
+        <!-- Instagram Link Widget -->
+        <div class="sidebar-widget instagram-widget">
+          <div class="insta-header">
+            <i class="fa-brands fa-instagram"></i>
+            <div>
+              <h3>nandyal.times</h3>
+              <p>90K+ Followers</p>
+            </div>
+          </div>
+          <p class="widget-desc">Stay tuned to our official Instagram page for instant video reels, reels highlights, and daily local updates!</p>
+          <a href="https://www.instagram.com/nandyal.times" target="_blank" class="btn btn-instagram">
+            <i class="fa-brands fa-instagram"></i> Visit Instagram Page
+          </a>
+        </div>
+
+        <!-- Saved Articles / Bookmarks Widget -->
+        <div class="sidebar-widget bookmarks-widget" id="bookmarksWidget">
+          <div class="widget-header">
+            <h3><i class="fa-solid fa-bookmark text-crimson"></i> Bookmarked Updates</h3>
+          </div>
+          <div class="bookmarks-list" id="sidebarBookmarksList">
+            <!-- Loaded dynamically -->
+            <p class="widget-desc" style="color: var(--text-muted); font-style: italic;">No bookmarked articles yet. Save news cards to read them here.</p>
+          </div>
+        </div>
+
+        <!-- Sidebar Advertisement Slot -->
+        <div class="sponsor-card side-sponsor-card" id="sideSponsorSlot">
+          <!-- Loaded Dynamically -->
+        </div>
+
+        <!-- Local Directory Widget -->
+        <div class="sidebar-widget directory-widget" id="directory">
+          <div class="widget-header">
+            <h3><i class="fa-solid fa-store text-gold"></i> Local Directory</h3>
+            <span class="badge badge-gold">Featured</span>
+          </div>
+          <div class="directory-list" id="sidebarDirectoryList">
+            <!-- Loaded Dynamically -->
+          </div>
+        </div>
+
+      </aside>
+
+    </div>
+  </main>
+
+  <!-- MODALS -->
+
+  <!-- 1. Submit a Tip Modal -->
+  <div class="modal-overlay" id="tipModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Report an Incident / Tip</h2>
+        <button class="modal-close" onclick="closeModal('tipModal')">&times;</button>
+      </div>
+      <form id="tipForm" enctype="multipart/form-data">
+        <div class="form-group">
+          <label for="tipName">Your Name *</label>
+          <input type="text" id="tipName" name="name" required placeholder="Enter your full name">
+        </div>
+        <div class="form-group">
+          <label for="tipContact">WhatsApp / Phone *</label>
+          <input type="tel" id="tipContact" name="contact" required placeholder="For admin verification">
+        </div>
+        <div class="form-group">
+          <label for="tipTitle">Incident Title *</label>
+          <input type="text" id="tipTitle" name="title" required placeholder="What happened, where, and when?">
+        </div>
+        <div class="form-group">
+          <label for="tipDescription">Describe the Incident *</label>
+          <textarea id="tipDescription" name="description" rows="4" required placeholder="Provide details about the incident..."></textarea>
+        </div>
+        <div class="form-group">
+          <label for="tipMedia">Upload Photo or Video (Optional)</label>
+          <input type="file" id="tipMedia" name="media" accept="image/*,video/*">
+          <p class="file-help">Max file size: 100MB (Supports Images & Videos)</p>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Submit Report</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. Become a Reporter Modal -->
+  <div class="modal-overlay" id="reporterModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Become a News Reporter</h2>
+        <button class="modal-close" onclick="closeModal('reporterModal')">&times;</button>
+      </div>
+      <div class="reporter-intro">
+        <p>Apply to become a verified reporter for Nandyal Times! Share local incidents, jobs, and news stories with 90k+ followers.</p>
+      </div>
+      <form id="reporterForm">
+        <div class="form-group">
+          <label for="repName">Full Name *</label>
+          <input type="text" id="repName" name="name" required placeholder="Enter your legal name">
+        </div>
+        <div class="form-group">
+          <label for="repMobile">Mobile Number *</label>
+          <input type="tel" id="repMobile" name="mobile" required placeholder="Enter mobile number">
+        </div>
+        <div class="form-group">
+          <label for="repLocation">Location / Area *</label>
+          <input type="text" id="repLocation" name="location" required placeholder="e.g. NGO Colony, Mahanandi, Center">
+        </div>
+        <div class="form-group">
+          <label for="repUsername">Create Username *</label>
+          <input type="text" id="repUsername" name="username" required placeholder="Choose a unique username">
+        </div>
+        <div class="form-group">
+          <label for="repPassword">Create Password *</label>
+          <input type="password" id="repPassword" name="password" required placeholder="Choose a secure password">
+        </div>
+        <button type="submit" class="btn btn-gold btn-block">Submit Application</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3. News Article Detail Modal -->
+  <div class="modal-overlay" id="newsDetailModal">
+    <div class="modal-card modal-card-large">
+      <div class="modal-header">
+        <span class="badge" id="modalCategory">Category</span>
+        <button class="modal-close" onclick="closeModal('newsDetailModal')">&times;</button>
+      </div>
+      <div class="news-detail-body">
+        <h1 id="modalTitle">News Title</h1>
+        <div class="news-meta">
+          <span><i class="fa-solid fa-user-pen"></i> By <strong id="modalReporter">Reporter</strong></span>
+          <span><i class="fa-solid fa-calendar-days"></i> <span id="modalDate">Date</span></span>
+          <span><i class="fa-solid fa-eye"></i> <span id="modalViews">0</span> views</span>
+        </div>
+        
+        <div class="news-detail-media" id="modalMediaContainer">
+          <!-- Image or Video goes here -->
+        </div>
+
+        <div class="news-detail-content" id="modalContent">
+          <!-- Text content -->
+        </div>
+        
+        <div class="news-detail-share">
+          <h4>Share this news:</h4>
+          <div class="share-buttons">
+            <button class="btn-share share-wa" onclick="shareNews('whatsapp')"><i class="fa-brands fa-whatsapp"></i> WhatsApp</button>
+            <button class="btn-share share-fb" onclick="shareNews('facebook')"><i class="fa-brands fa-facebook-f"></i> Facebook</button>
+            <button class="btn-share share-copy" onclick="shareNews('copy')"><i class="fa-solid fa-link"></i> Copy Link</button>
+          </div>
+        </div>
+
+        <!-- Comments Section -->
+        <div class="news-detail-comments" style="margin-top: 30px; border-top: 1px solid var(--card-border); padding-top: 24px;">
+          <h3 style="font-size: 18px; margin-bottom: 16px; display:flex; align-items:center; gap:8px;">
+            <i class="fa-regular fa-comments" style="color:var(--crimson);"></i> Discussion (<span id="modalCommentsCount">0</span>)
+          </h3>
+          
+          <!-- Comment Form -->
+          <form id="commentForm" style="margin-bottom: 24px;">
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="commentAuthor" style="font-size:12px; font-weight:600; color:var(--text-secondary);">Your Name *</label>
+              <input type="text" id="commentAuthor" required placeholder="Enter your name" style="padding:8px 12px; font-size:13px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label for="commentContent" style="font-size:12px; font-weight:600; color:var(--text-secondary);">Your Comment *</label>
+              <textarea id="commentContent" rows="3" required placeholder="Write a respectful comment..." style="padding:8px 12px; font-size:13px;"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" style="padding:8px 16px; font-size:13px; font-family:var(--font-heading); font-weight:600; border-radius:var(--radius-md);">Post Comment</button>
+          </form>
+
+          <!-- Comments List -->
+          <div id="commentsList" style="display:flex; flex-direction:column; gap:16px; max-height: 300px; overflow-y: auto; padding-right: 8px;">
+            <!-- Loaded dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container footer-content">
+      <div>
+        <h3>Nandyal Times</h3>
+        <p>Your trustable local voice & community connector. Covering Nandyal district news, events, job alerts, and incidents live.</p>
+      </div>
+      <div class="footer-links">
+        <a href="#news">News Feed</a>
+        <a href="#directory">Local Listings</a>
+        <a href="admin.html">Dashboard Portal</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>&copy; 2026 Nandyal Times. All rights reserved. Designed for Rayalaseema Media Hub.</p>
+    </div>
+  </footer>
+
+  <!-- Floating Language Translator Widget -->
+  <div class="floating-translator" id="floatingTranslator">
+    <div class="translator-header">
+      <i class="fa-solid fa-language"></i>
+      <span>Translate / భాష</span>
+    </div>
+    <div id="google_translate_element"></div>
+  </div>
+
+  <!-- Floating WhatsApp Contact Button -->
+  <div class="floating-whatsapp-container">
+    <div class="floating-whatsapp-tooltip">Report Local Issues / సంప్రదించండి</div>
+    <!-- REPLACE 919000000000 WITH CLIENT'S WHATSAPP NUMBER -->
+    <a href="https://wa.me/917816094431?text=Hi%20Nandyal%20Times,%20I%20want%20to%20report%20an%20issue%20in%20my%20area." target="_blank" class="floating-whatsapp">
+      <i class="fa-brands fa-whatsapp"></i>
+    </a>
+  </div>
+
+  <script src="mock-api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
